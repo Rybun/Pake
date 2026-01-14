@@ -2,15 +2,10 @@ name: Build ChatGPT (glibc 2.35 / ubuntu-22.04)
 
 on:
   workflow_dispatch:
-  # Si también quieres que compile en cada push a main, descomenta:
-  # push:
-  #   branches:
-  #     - main
 
 jobs:
   build-linux:
     runs-on: ubuntu-22.04
-
     env:
       CI: true
 
@@ -33,11 +28,10 @@ jobs:
             libayatana-appindicator3-dev \
             libwebkit2gtk-4.0-dev
 
-      # IMPORTANTE: pnpm debe estar instalado antes de setup-node si vas a usar cache: pnpm
-      - name: Setup pnpm
+      # IMPORTANTE: si package.json tiene "packageManager": "pnpm@X.Y.Z",
+      # NO fijes version aquí, o chocará.
+      - name: Setup pnpm (from packageManager)
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Setup Node 22
         uses: actions/setup-node@v4
@@ -57,7 +51,6 @@ jobs:
       - name: Install JS deps
         run: pnpm i --frozen-lockfile
 
-      # Genera la app local "ChatGPT" apuntando a chatgpt.com
       - name: Build ChatGPT app (Linux)
         run: |
           pnpm dlx pake-cli https://chatgpt.com --name ChatGPT
@@ -68,18 +61,6 @@ jobs:
           find src-tauri/target -maxdepth 8 -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) -print || true
           echo "=== Any bundles in repo ==="
           find . -maxdepth 6 -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) -print || true
-
-      # Best-effort: intenta listar qué GLIBC pide el ELF si encuentra ejecutable suelto
-      - name: Check GLIBC symbols (best-effort)
-        run: |
-          set -e
-          BIN="$(find src-tauri/target -type f -perm -111 -name "ChatGPT" 2>/dev/null | head -n 1 || true)"
-          if [ -n "$BIN" ]; then
-            echo "Binary: $BIN"
-            objdump -T "$BIN" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -V | tail -n 30
-          else
-            echo "No 'ChatGPT' executable found to inspect (may be normal if only bundle formats were produced)."
-          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
