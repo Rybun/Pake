@@ -2,13 +2,16 @@ name: Build ChatGPT (glibc 2.35 / ubuntu-22.04)
 
 on:
   workflow_dispatch:
+  # Si también quieres que compile en cada push a main, descomenta:
+  # push:
+  #   branches:
+  #     - main
 
 jobs:
   build-linux:
     runs-on: ubuntu-22.04
 
     env:
-      # Evita problemas raros con keyring en CI
       CI: true
 
     steps:
@@ -30,55 +33,63 @@ jobs:
             libayatana-appindicator3-dev \
             libwebkit2gtk-4.0-dev
 
+      # IMPORTANTE: pnpm debe estar instalado antes de setup-node si vas a usar cache: pnpm
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: "pnpm"
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Setup Rust (stable)
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri
 
       - name: Install JS deps
         run: pnpm i --frozen-lockfile
 
-      # Construye la app “ChatGPT” como paquete local (no hace falta publicar nada).
-      # El README muestra el uso: pake <url> --name <Nombre> :contentReference[oaicite:2]{index=2}
+      # Genera la app local "ChatGPT" apuntando a chatgpt.com
       - name: Build ChatGPT app (Linux)
         run: |
           pnpm dlx pake-cli https://chatgpt.com --name ChatGPT
 
-      # Verificación rápida de qué GLIBC pide el binario resultante.
-      # (Ajusta el path si tu bundle cae en otro sitio; ver pasos de "Find artifacts" abajo)
-      - name: Find artifacts
+      - name: Find bundle outputs
         run: |
-          echo "Listing bundle output…"
-          find src-tauri/target -maxdepth 6 -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) -print || true
-          find . -maxdepth 4 -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) -print || true
+          echo "=== Bundles generated (if any) ==="
+          find src-tauri/target -maxdepth 8 -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) -print || true
+          echo "=== Any bundles in repo ==="
+          find . -maxdepth 6 -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) -print || true
 
+      # Best-effort: intenta listar qué GLIBC pide el ELF si encuentra ejecutable suelto
       - name: Check GLIBC symbols (best-effort)
         run: |
           set -e
-          # Intentamos localizar el ELF principal (si existe) y listar símbolos GLIBC requeridos
-          # Nota: según bundle, puede no haber binario suelto fácil; esto es “best-effort”.
           BIN="$(find src-tauri/target -type f -perm -111 -name "ChatGPT" 2>/dev/null | head -n 1 || true)"
           if [ -n "$BIN" ]; then
             echo "Binary: $BIN"
-            objdump -T "$BIN" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -V | tail -n 20
+            objdump -T "$BIN" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -V | tail -n 30
           else
-            echo "No 'ChatGPT' executable found to inspect (this can be normal if you only have .deb/.AppImage)."
+            echo "No 'ChatGPT' executable found to inspect (may be normal if only bundle formats were produced)."
           fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ChatGPT-linux-glibc235
+          if-no-files-found: warn
           path: |
+            src-tauri/target/**/bundle/**/*.AppImage
+            src-tauri/target/**/bundle/**/*.deb
+            src-tauri/target/**/bundle/**/*.rpm
             **/*.AppImage
             **/*.deb
             **/*.rpm
