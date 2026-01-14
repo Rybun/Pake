@@ -45,7 +45,7 @@ jobs:
       # ✅ IMPORTANTE: indica target appimage, si no, te hace .deb
       - name: Build ChatGPT AppImage
         run: |
-          pnpm dlx pake-cli https://chatgpt.com --name "ChatGPT" --target appimage
+          pnpm dlx pake-cli https://chatgpt.com --name "ChatGPT" --targets appimage
 
       # ✅ Localiza el .AppImage donde lo deje pake/tauri y lo prepara como artifact
       - name: Collect artifacts
